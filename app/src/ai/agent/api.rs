@@ -2,6 +2,7 @@ pub(crate) mod convert_conversation;
 mod convert_from;
 mod convert_to;
 mod r#impl;
+pub(crate) mod ollama;
 
 pub use ai::agent::convert::ConvertToAPITypeError;
 use ai::api_keys::ApiKeyManager;
@@ -115,6 +116,8 @@ pub struct RequestParams {
 
     /// User-provided API keys for AI providers (BYO API Key).
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
+    /// Base URL for a local Ollama instance. When set, requests bypass Warp's servers entirely.
+    pub ollama_base_url: Option<String>,
     pub allow_use_of_warp_credits_with_byok: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
@@ -233,7 +236,9 @@ impl RequestParams {
         let should_redact_secrets = get_secret_obfuscation_mode(app).should_redact_secret();
 
         let user_workspaces = UserWorkspaces::as_ref(app);
-        let api_keys = ApiKeyManager::as_ref(app).api_keys_for_request(
+        let api_key_manager = ApiKeyManager::as_ref(app);
+        let ollama_base_url = api_key_manager.keys().ollama_base_url.clone();
+        let api_keys = api_key_manager.api_keys_for_request(
             user_workspaces.is_byo_api_key_enabled(),
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
@@ -298,6 +303,7 @@ impl RequestParams {
             planning_enabled: true,
             should_redact_secrets,
             api_keys,
+            ollama_base_url,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,
             isolation_level,

@@ -7,13 +7,21 @@ use warp_multi_agent_api as api;
 
 use crate::server::server_api::ServerApi;
 
-use super::{convert_to::convert_input, ConvertToAPITypeError, RequestParams, ResponseStream};
+use super::{convert_to::convert_input, ollama, ConvertToAPITypeError, RequestParams, ResponseStream};
 
 pub async fn generate_multi_agent_output(
     server_api: Arc<ServerApi>,
     mut params: RequestParams,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
 ) -> Result<ResponseStream, ConvertToAPITypeError> {
+    // Route directly to Ollama if a base URL is configured, bypassing Warp's servers.
+    if let Some(base_url) = params.ollama_base_url.clone().filter(|u| !u.is_empty()) {
+        if ollama::is_ollama_request(&params.input, Some(&base_url)) {
+            let model = params.model.to_string();
+            let stream = ollama::stream_response(base_url, model, params.input);
+            return Ok(stream);
+        }
+    }
     let supported_tools = params
         .supported_tools_override
         .take()
