@@ -22,6 +22,9 @@ pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+    /// Base URL for a local Ollama instance (e.g. "http://localhost:11434").
+    /// Requests to Ollama are made directly from the client, bypassing Warp's servers.
+    pub ollama_base_url: Option<String>,
 }
 
 impl ApiKeys {
@@ -30,6 +33,7 @@ impl ApiKeys {
             || self.anthropic.is_some()
             || self.google.is_some()
             || self.open_router.is_some()
+            || self.ollama_base_url.is_some()
     }
 }
 
@@ -89,6 +93,12 @@ impl ApiKeyManager {
 
     pub fn set_open_router_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
         self.keys.open_router = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_ollama_base_url(&mut self, url: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.ollama_base_url = url;
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
         self.write_keys_to_secure_storage(ctx);
     }
