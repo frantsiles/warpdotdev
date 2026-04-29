@@ -1,3 +1,4 @@
+pub(crate) mod anthropic;
 pub(crate) mod convert_conversation;
 mod convert_from;
 mod convert_to;
@@ -118,6 +119,8 @@ pub struct RequestParams {
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
     /// Base URL for a local Ollama instance. When set, requests bypass Warp's servers entirely.
     pub ollama_base_url: Option<String>,
+    /// Anthropic API key. When set, requests go directly to api.anthropic.com.
+    pub anthropic_key: Option<String>,
     pub allow_use_of_warp_credits_with_byok: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
@@ -238,6 +241,7 @@ impl RequestParams {
         let user_workspaces = UserWorkspaces::as_ref(app);
         let api_key_manager = ApiKeyManager::as_ref(app);
         let ollama_base_url = api_key_manager.keys().ollama_base_url.clone();
+        let anthropic_key = api_key_manager.keys().anthropic.clone();
         let api_keys = api_key_manager.api_keys_for_request(
             user_workspaces.is_byo_api_key_enabled(),
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
@@ -304,6 +308,7 @@ impl RequestParams {
             should_redact_secrets,
             api_keys,
             ollama_base_url,
+            anthropic_key,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,
             isolation_level,

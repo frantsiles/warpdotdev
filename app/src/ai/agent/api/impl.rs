@@ -7,7 +7,7 @@ use warp_multi_agent_api as api;
 
 use crate::server::server_api::ServerApi;
 
-use super::{convert_to::convert_input, ollama, ConvertToAPITypeError, RequestParams, ResponseStream};
+use super::{anthropic, convert_to::convert_input, ollama, ConvertToAPITypeError, RequestParams, ResponseStream};
 
 pub async fn generate_multi_agent_output(
     server_api: Arc<ServerApi>,
@@ -19,6 +19,15 @@ pub async fn generate_multi_agent_output(
         if ollama::is_ollama_request(&params.input, Some(&base_url)) {
             let model = params.model.to_string();
             let stream = ollama::stream_response(base_url, model, params.input);
+            return Ok(stream);
+        }
+    }
+
+    // Route directly to Anthropic if an API key is configured, bypassing Warp's servers.
+    if let Some(key) = params.anthropic_key.clone().filter(|k| !k.is_empty()) {
+        if anthropic::is_anthropic_request(&params.input, Some(&key)) {
+            let model = params.model.to_string();
+            let stream = anthropic::stream_response(key, model, params.input);
             return Ok(stream);
         }
     }
