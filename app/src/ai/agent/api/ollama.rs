@@ -16,6 +16,41 @@ use crate::server::server_api::AIApiError;
 
 use super::{AIAgentInput, Event, ResponseStream};
 
+// --- Model listing ---
+
+#[derive(Deserialize)]
+struct OllamaTagsResponse {
+    models: Vec<OllamaModelEntry>,
+}
+
+#[derive(Deserialize)]
+pub struct OllamaModelEntry {
+    pub name: String,
+    #[serde(default)]
+    pub details: Option<OllamaModelDetails>,
+}
+
+#[derive(Deserialize)]
+pub struct OllamaModelDetails {
+    pub parameter_size: Option<String>,
+    pub family: Option<String>,
+}
+
+/// Fetches the list of locally available models from Ollama's `/api/tags` endpoint.
+pub async fn fetch_model_list(base_url: &str) -> anyhow::Result<Vec<OllamaModelEntry>> {
+    let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Ollama /api/tags returned HTTP {}", resp.status());
+    }
+    let tags: OllamaTagsResponse = resp.json().await?;
+    Ok(tags.models)
+}
+
 // --- OpenAI-compatible request/response types ---
 
 #[derive(Serialize)]

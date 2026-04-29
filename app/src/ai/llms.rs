@@ -9,6 +9,7 @@ use warp_core::user_preferences::GetUserPreferences;
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::{
+    ai::agent::api::ollama,
     auth::{
         auth_manager::{AuthManager, AuthManagerEvent},
         AuthStateProvider,
@@ -18,6 +19,8 @@ use crate::{
     server::server_api::ServerApiProvider,
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
+
+use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
 
 use super::execution_profiles::profiles::AIExecutionProfilesModel;
 
@@ -537,6 +540,13 @@ impl LLMPreferences {
             }
         });
 
+        // Refresh Ollama models whenever the user updates their API key settings.
+        ctx.subscribe_to_model(&ApiKeyManager::handle(ctx), |me, event, ctx| {
+            if let ApiKeyManagerEvent::KeysUpdated = event {
+                me.refresh_ollama_models(ctx);
+            }
+        });
+
         let base_llm_for_terminal_view = HashMap::new();
 
         let me = Self {
@@ -544,6 +554,56 @@ impl LLMPreferences {
             last_update: None,
             base_llm_for_terminal_view,
         };
+
+        // Eagerly load Ollama models if a base URL is already configured.
+        let ollama_base_url = ApiKeyManager::as_ref(ctx)
+            .keys()
+            .ollama_base_url
+            .clone()
+            .unwrap_or_default();
+        if !ollama_base_url.is_empty() {
+            ctx.spawn(
+                async move { ollama::fetch_model_list(&ollama_base_url).await },
+                |me: &mut LLMPreferences, result, ctx| {
+                    if let Ok(entries) = result {
+                        let new_ollama: Vec<LLMInfo> = entries
+                            .into_iter()
+                            .map(|entry| {
+                                let description = entry
+                                    .details
+                                    .as_ref()
+                                    .and_then(|d| d.parameter_size.clone());
+                                LLMInfo {
+                                    display_name: entry.name.clone(),
+                                    base_model_name: entry.name.clone(),
+                                    id: entry.name.clone().into(),
+                                    reasoning_level: None,
+                                    usage_metadata: LLMUsageMetadata {
+                                        request_multiplier: 1,
+                                        credit_multiplier: None,
+                                    },
+                                    description,
+                                    disable_reason: None,
+                                    vision_supported: false,
+                                    spec: None,
+                                    provider: LLMProvider::Ollama,
+                                    host_configs: HashMap::new(),
+                                    discount_percentage: None,
+                                }
+                            })
+                            .collect();
+                        me.models_by_feature
+                            .agent_mode
+                            .choices
+                            .retain(|m| m.provider != LLMProvider::Ollama);
+                        let mut combined = new_ollama;
+                        combined.extend(me.models_by_feature.agent_mode.choices.drain(..));
+                        me.models_by_feature.agent_mode.choices = combined;
+                        ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+                    }
+                },
+            );
+        }
 
         // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
         // so that it's available by the time test steps like `set_preferred_agent_mode_llm` run.
@@ -991,6 +1051,84 @@ impl LLMPreferences {
         }
 
         ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+    }
+
+    /// Returns true when the given model ID belongs to a locally-running Ollama instance.
+    pub fn is_ollama_model(&self, id: &LLMId) -> bool {
+        self.models_by_feature
+            .agent_mode
+            .info_for_id(id)
+            .is_some_and(|info| info.provider == LLMProvider::Ollama)
+    }
+
+    /// Fetches available models from the configured Ollama instance and injects them
+    /// at the top of the agent-mode model list. Removes stale Ollama entries first.
+    pub fn refresh_ollama_models(&mut self, ctx: &mut ModelContext<Self>) {
+        let base_url = ApiKeyManager::as_ref(ctx)
+            .keys()
+            .ollama_base_url
+            .clone()
+            .unwrap_or_default();
+
+        if base_url.is_empty() {
+            let before = self.models_by_feature.agent_mode.choices.len();
+            self.models_by_feature
+                .agent_mode
+                .choices
+                .retain(|m| m.provider != LLMProvider::Ollama);
+            if self.models_by_feature.agent_mode.choices.len() != before {
+                ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+            }
+            return;
+        }
+
+        ctx.spawn(
+            async move { ollama::fetch_model_list(&base_url).await },
+            |me, result, ctx| match result {
+                Ok(entries) => {
+                    let new_ollama: Vec<LLMInfo> = entries
+                        .into_iter()
+                        .map(|entry| {
+                            let description = entry
+                                .details
+                                .as_ref()
+                                .and_then(|d| d.parameter_size.clone());
+                            LLMInfo {
+                                display_name: entry.name.clone(),
+                                base_model_name: entry.name.clone(),
+                                id: entry.name.clone().into(),
+                                reasoning_level: None,
+                                usage_metadata: LLMUsageMetadata {
+                                    request_multiplier: 1,
+                                    credit_multiplier: None,
+                                },
+                                description,
+                                disable_reason: None,
+                                vision_supported: false,
+                                spec: None,
+                                provider: LLMProvider::Ollama,
+                                host_configs: HashMap::new(),
+                                discount_percentage: None,
+                            }
+                        })
+                        .collect();
+
+                    // Prepend Ollama models, replacing any previously injected ones.
+                    me.models_by_feature
+                        .agent_mode
+                        .choices
+                        .retain(|m| m.provider != LLMProvider::Ollama);
+                    let mut combined = new_ollama;
+                    combined.extend(me.models_by_feature.agent_mode.choices.drain(..));
+                    me.models_by_feature.agent_mode.choices = combined;
+
+                    ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch Ollama model list: {e}");
+                }
+            },
+        );
     }
 
     pub fn vision_supported(&self, app: &AppContext, terminal_view_id: Option<EntityId>) -> bool {

@@ -8,6 +8,7 @@ use chrono::{DateTime, Duration, Utc};
 use parking_lot::RwLock;
 use uuid::Uuid;
 use warp_core::channel::{Channel, ChannelState};
+use warp_core::features::FeatureFlag;
 use warp_graphql::object_permissions::OwnerType;
 use warpui::{AppContext, Entity, SingletonEntity};
 
@@ -240,6 +241,11 @@ impl AuthState {
     /// during the transient state where credentials exist but user data hasn't loaded
     /// yet, the user is conservatively treated as lacking a full account.
     pub fn is_anonymous_or_logged_out(&self) -> bool {
+        // When running without a warp.dev account (local mode), treat the user
+        // as a full local user so AI and other local features remain enabled.
+        if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
+            return false;
+        }
         !self.is_logged_in() || self.is_user_anonymous().unwrap_or(true)
     }
 

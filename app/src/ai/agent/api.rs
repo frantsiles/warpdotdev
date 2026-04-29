@@ -24,6 +24,7 @@ use warp_core::execution_mode::AppExecutionMode;
 use warp_core::features::FeatureFlag;
 
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::llms::LLMPreferences;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::{
     ai::{blocklist::SessionContext, llms::LLMId},
@@ -119,6 +120,8 @@ pub struct RequestParams {
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
     /// Base URL for a local Ollama instance. When set, requests bypass Warp's servers entirely.
     pub ollama_base_url: Option<String>,
+    /// True when the selected model is an Ollama model (determined by LLMPreferences).
+    pub is_ollama_model: bool,
     /// Anthropic API key. When set, requests go directly to api.anthropic.com.
     pub anthropic_key: Option<String>,
     pub allow_use_of_warp_credits_with_byok: bool,
@@ -242,6 +245,8 @@ impl RequestParams {
         let api_key_manager = ApiKeyManager::as_ref(app);
         let ollama_base_url = api_key_manager.keys().ollama_base_url.clone();
         let anthropic_key = api_key_manager.keys().anthropic.clone();
+        let model_id = request_input.model_id.clone();
+        let is_ollama_model = LLMPreferences::as_ref(app).is_ollama_model(&model_id);
         let api_keys = api_key_manager.api_keys_for_request(
             user_workspaces.is_byo_api_key_enabled(),
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
@@ -308,6 +313,7 @@ impl RequestParams {
             should_redact_secrets,
             api_keys,
             ollama_base_url,
+            is_ollama_model,
             anthropic_key,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,

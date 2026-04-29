@@ -14,9 +14,9 @@ pub async fn generate_multi_agent_output(
     mut params: RequestParams,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
 ) -> Result<ResponseStream, ConvertToAPITypeError> {
-    // Route directly to Ollama if a base URL is configured, bypassing Warp's servers.
-    if let Some(base_url) = params.ollama_base_url.clone().filter(|u| !u.is_empty()) {
-        if ollama::is_ollama_request(&params.input, Some(&base_url)) {
+    // Route directly to Ollama when the selected model is a locally-running Ollama model.
+    if params.is_ollama_model {
+        if let Some(base_url) = params.ollama_base_url.clone().filter(|u| !u.is_empty()) {
             let model = params.model.to_string();
             let stream = ollama::stream_response(base_url, model, params.input);
             return Ok(stream);

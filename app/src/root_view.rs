@@ -1764,7 +1764,10 @@ impl RootView {
                     // users who haven't completed it yet (tracked via a local UserPreferences key).
                     let has_completed_local_onboarding = FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
                         && has_completed_local_onboarding(ctx);
-                    let should_show_pre_login_onboarding = FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
+                    // Skip the pre-login onboarding when SkipFirebaseAnonymousUser is set,
+                    // so users running without a warp.dev account go directly to the workspace.
+                    let should_show_pre_login_onboarding = !FeatureFlag::SkipFirebaseAnonymousUser.is_enabled()
+                        && FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
                         && FeatureFlag::AgentOnboarding.is_enabled()
                         && !has_completed_local_onboarding;
                     if FeatureFlag::ForceLogin.is_enabled() {
